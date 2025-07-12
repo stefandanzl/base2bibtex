@@ -1,0 +1,20 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+    VAULT: C:\\PROJECTS\\Obsidian\\hirn\\.obsidian\\plugins\\base2bibtex
+
+tasks:
+    default:
+        cmds:
+            - npm run build
+            - cp main.js "{{.VAULT}}\main.js"
+            # - cp styles.css "{{.VAULT}}\styles.css"
+            - cp manifest.json "{{.VAULT}}\manifest.json"
+    serena:
+        cmds:
+            - npm run build
+            - copy main.js "{{.VAULT}}\main.js"
+            - copy styles.css "{{.VAULT}}\styles.css"
+            - copy manifest.json "{{.VAULT}}\manifest.json"

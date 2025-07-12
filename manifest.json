@@ -1,0 +1,10 @@
+{
+	"id": "base2bibtex",
+	"name": "Base to BibTeX",
+	"version": "1.0.0",
+	"minAppVersion": "1.9.4",
+	"description": "Converts Obsidian Bases of literature sources to BibTeX files.",
+	"author": "Stefan Danzl",
+	"authorUrl": "https://github.com/stefandanzl",
+	"isDesktopOnly": false
+}

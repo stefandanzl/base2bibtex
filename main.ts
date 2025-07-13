@@ -120,9 +120,9 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		await this.loadSettings();
 
 		// Add ribbon icon
-		this.addRibbonIcon("clipboard", "Convert Table to BibTeX", () => {
+		/** this.addRibbonIcon("clipboard", "Convert Table to BibTeX", () => {
 			new TableToBibTeXModal(this.app, this).open();
-		});
+		});*/
 
 		// Add command
 		this.addCommand({
@@ -500,18 +500,18 @@ class TableToBibTeXModal extends Modal {
 		// Table input area
 		new Setting(contentEl)
 			.setName("Paste your table here")
-			.setDesc("Paste the markdown table from Obsidian or elsewhere")
-			.addTextArea((text) => {
-				this.tableInput = text.inputEl;
-				text.inputEl.rows = 15;
-				text.inputEl.cols = 80;
-				text.inputEl.placeholder = `| name | Status | year | citekey | bibtype |
+			.setDesc("Paste the markdown table from Obsidian or elsewhere");
+		new Setting(contentEl).addTextArea((text) => {
+			this.tableInput = text.inputEl;
+			text.inputEl.rows = 15;
+			text.inputEl.cols = 80;
+			text.inputEl.placeholder = `| name | Status | year | citekey | bibtype |
 |------|--------|------|---------|---------|
 | Ara18 Dynamic Decoupling... | unread | 2018 | Ara18 | book |`;
 
-				// Auto-paste from clipboard if available
-				this.tryAutoPaste(text);
-			});
+			// Auto-paste from clipboard if available
+			this.tryAutoPaste(text);
+		});
 
 		// Output path
 		new Setting(contentEl)

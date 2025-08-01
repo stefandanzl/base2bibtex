@@ -1,4 +1,5 @@
 import { App, Plugin, Modal, Setting, Notice, TFile } from "obsidian";
+import { BibtexParser } from "bibtex-js-parser";
 
 interface FieldMappings {
 	all: { [bibtexField: string]: string };
@@ -21,6 +22,7 @@ interface ClipboardToBibTeXSettings {
 	lastExportPath: string;
 	fieldMappings: FieldMappings;
 	separator: string;
+	noteLocation: string;
 }
 
 const DEFAULT_FIELD_MAPPINGS: FieldMappings = {
@@ -107,6 +109,7 @@ const DEFAULT_SETTINGS: ClipboardToBibTeXSettings = {
 	lastExportPath: "references.bib",
 	fieldMappings: DEFAULT_FIELD_MAPPINGS,
 	separator: "\t", // Default to markdown table format
+	noteLocation: "/",
 };
 
 interface TableRow {
@@ -130,6 +133,14 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			name: "Convert Table to BibTeX",
 			callback: () => {
 				new TableToBibTeXModal(this.app, this).open();
+			},
+		});
+
+		this.addCommand({
+			id: "bibtex-to-note",
+			name: "Create Note from BibTeX",
+			callback: () => {
+				new BibTeXToNoteModal(this.app, this).open();
 			},
 		});
 	}
@@ -183,7 +194,7 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			.map((line, index) => {
 				if (
 					!line.trim() ||
-					(separator === "|" && line.match(/^[\|\-\s]+$/))
+					(separator === "|" && line.match(/^[|\-\s]+$/))
 				) {
 					return null; // Skip separator lines
 				}
@@ -214,7 +225,7 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		const rows: TableRow[] = [];
 		for (let i = 1; i < lines.length; i++) {
 			const line = lines[i].trim();
-			if (!line || (separator === "|" && line.match(/^[\|\-\s]+$/))) {
+			if (!line || (separator === "|" && line.match(/^[|\-\s]+$/))) {
 				console.log(
 					`parseTableData - Skipping empty/separator line ${i}`
 				);
@@ -372,20 +383,26 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			// Skip missing/empty fields silently
 			if (!value || !value.trim()) continue;
 
+			const escapedValue = this.escapeLatex(value.trim());
+
 			// Special handling for certain fields
 			if (bibtexField === "pages" && value.includes("-")) {
 				const pages = value.replace(/-/g, "--");
 				entry += `  ${bibtexField} = {${pages}},\n`;
 			} else if (bibtexField === "title") {
 				const cleanTitle = this.extractTitle(value);
-				entry += `  ${bibtexField} = {${cleanTitle}},\n`;
+				entry += `  ${bibtexField} = {${this.escapeLatex(
+					cleanTitle
+				)}},\n`;
 			} else if (bibtexField === "author") {
 				const author = this.extractAuthor(value, row.author);
 				if (author) {
-					entry += `  ${bibtexField} = {${author}},\n`;
+					entry += `  ${bibtexField} = {${this.escapeLatex(
+						author
+					)}},\n`;
 				}
 			} else {
-				entry += `  ${bibtexField} = {${value.trim()}},\n`;
+				entry += `  ${bibtexField} = {${escapedValue}},\n`;
 			}
 		}
 
@@ -432,6 +449,105 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 				return "inproceedings";
 			default:
 				return "misc";
+		}
+	}
+
+	escapeLatex(text: string): string {
+		if (!text) return "";
+		const map: { [key: string]: string } = {
+			"&": "\\&",
+			"%": "\\%",
+			$: "\\$",
+			"#": "\\#",
+			_: "\\_",
+			"{": "\\{",
+			"}": "\\}",
+			"~": "\\textasciitilde{}",
+			"^": "\\textasciicircum{}",
+			"\\": "\\textbackslash{}",
+			'"': "\\textquotedbl{}",
+		};
+		return text.replace(/[&%$#_{}~^"\\]/g, (m) => map[m]);
+	}
+
+	sanitizeFilename(filename: string): string {
+		// Replace characters that are not allowed in filenames
+		return filename.replace(/[/\\?%*:|"<>]/g, "-");
+	}
+
+	parseBibTeXEntry(bibtex: string): { [key: string]: string } | null {
+		try {
+			const parsed = BibtexParser.parseToJSON(bibtex);
+
+			console.log(parsed);
+			if (parsed.length !== 1) {
+				new Notice("Only single BibTeX entries are supported.");
+				return null;
+			}
+
+			const entry = parsed[0];
+			const result: { [key: string]: string } = {};
+
+			for (const [key, value] of Object.entries(entry)) {
+				if (key === "id") {
+					result["_citekey"] = entry.id;
+				} else if (key === "type") {
+					result["_bibtype"] = entry.type.toLowerCase();
+				} else {
+					result[key.toLowerCase()] = String(value);
+				}
+			}
+
+			return result;
+		} catch (e) {
+			console.error("BibTeX parsing error:", e);
+			return null;
+		}
+	}
+
+	async createNoteFromBibTeX(
+		entry: { [key: string]: string },
+		location: string,
+		filename: string
+	) {
+		const bibtype = entry["_bibtype"];
+		const typeMapping = this.settings.fieldMappings[bibtype] || {};
+		const allFields = {
+			...this.settings.fieldMappings.all,
+			...typeMapping,
+		};
+
+		let noteContent = "---\n";
+
+		for (const [bibtexField, sourceColumn] of Object.entries(allFields)) {
+			if (bibtexField.startsWith("_")) continue;
+
+			const value = entry[bibtexField.toLowerCase()];
+
+			if (value) {
+				noteContent += `${sourceColumn}: ${value}\n`;
+			}
+		}
+
+		noteContent += "---\n";
+
+		const filePath = `${location}/${filename}.md`;
+
+		try {
+			const file = await this.app.vault.create(filePath, noteContent);
+			this.app.fileManager.processFrontMatter(file, (frontMatter) => {
+				for (const [key, value] of Object.entries(allFields)) {
+					if (key.startsWith("_")) continue; // Skip structural fields
+					const bibtexField = key.toLowerCase();
+					if (entry[bibtexField]) {
+						frontMatter[value] = entry[bibtexField];
+					}
+				}
+			});
+			new Notice(`Successfully created note: ${filePath}`);
+		} catch (error) {
+			console.error("Error creating note:", error);
+			new Notice("Error creating note: " + error.message);
 		}
 	}
 
@@ -580,6 +696,145 @@ class TableToBibTeXModal extends Modal {
 	async tryAutoPaste(textArea: any) {
 		try {
 			// Request text/plain to get raw tab-separated data
+			const text = await navigator.clipboard.readText();
+			if (text && text.trim()) {
+				textArea.setValue(text);
+			}
+		} catch (error) {
+			console.error("Clipboard access failed:", error);
+		}
+	}
+}
+
+class BibTeXToNoteModal extends Modal {
+	plugin: ClipboardToBibTeXPlugin;
+	bibtexInput: HTMLTextAreaElement;
+	locationInput: HTMLInputElement;
+	filenameInput: HTMLInputElement;
+
+	constructor(app: App, plugin: ClipboardToBibTeXPlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+
+		contentEl.createEl("h2", { text: "Create Note from BibTeX" });
+
+		new Setting(contentEl)
+			.setName("Paste your BibTeX snippet here")
+			.setDesc("Paste a single BibTeX entry to create a new note.");
+
+		new Setting(contentEl).addTextArea((text) => {
+			this.bibtexInput = text.inputEl;
+			text.inputEl.rows = 15;
+			text.inputEl.cols = 80;
+			text.inputEl.placeholder = `@article{...`;
+
+			text.inputEl.addEventListener("input", () => {
+				const bibtexText = this.bibtexInput.value;
+				const parsedEntry = this.plugin.parseBibTeXEntry(bibtexText);
+				if (parsedEntry && parsedEntry["title"]) {
+					this.filenameInput.value = this.plugin.sanitizeFilename(
+						parsedEntry["title"]
+					);
+				}
+			});
+
+			this.tryAutoPaste(text);
+		});
+
+		new Setting(contentEl)
+			.setName("Note Location")
+			.setDesc("The folder to save the new note in.")
+			.addText((text) => {
+				this.locationInput = text.inputEl;
+				text.setValue(this.plugin.settings.noteLocation);
+				text.inputEl.style.width = "100%";
+			});
+
+		new Setting(contentEl)
+			.setName("Filename")
+			.setDesc("The name of the new note file (without .md extension).")
+			.addText((text) => {
+				this.filenameInput = text.inputEl;
+				text.inputEl.style.width = "100%";
+			});
+
+		const buttonContainer = contentEl.createDiv({
+			cls: "modal-button-container",
+		});
+		buttonContainer.style.display = "flex";
+		buttonContainer.style.gap = "10px";
+		buttonContainer.style.justifyContent = "flex-end";
+		buttonContainer.style.marginTop = "20px";
+
+		const createBtn = buttonContainer.createEl("button", {
+			text: "Create Note",
+			cls: "mod-cta",
+		});
+		createBtn.addEventListener("click", async () => {
+			const bibtexText = this.bibtexInput.value;
+			const noteLocation = this.locationInput.value;
+			const filename = this.filenameInput.value;
+
+			if (!bibtexText.trim()) {
+				new Notice("Please paste a BibTeX snippet first");
+				return;
+			}
+
+			if (!filename.trim()) {
+				new Notice("Please enter a filename");
+				return;
+			}
+
+			const sanitizedFilename = this.plugin.sanitizeFilename(filename);
+			if (sanitizedFilename !== filename) {
+				new Notice(
+					"Filename contains invalid characters. They have been replaced."
+				);
+				this.filenameInput.value = sanitizedFilename;
+				return;
+			}
+
+			this.plugin.settings.noteLocation = noteLocation;
+			await this.plugin.saveSettings();
+
+			const parsedEntry = this.plugin.parseBibTeXEntry(bibtexText);
+
+			if (!parsedEntry) {
+				new Notice("Could not parse BibTeX entry.");
+				return;
+			}
+
+			await this.plugin.createNoteFromBibTeX(
+				parsedEntry,
+				noteLocation,
+				sanitizedFilename
+			);
+
+			this.close();
+		});
+
+		const cancelBtn = buttonContainer.createEl("button", {
+			text: "Cancel",
+		});
+		cancelBtn.addEventListener("click", () => {
+			this.close();
+		});
+
+		setTimeout(() => this.bibtexInput.focus(), 100);
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+	}
+
+	async tryAutoPaste(textArea: any) {
+		try {
 			const text = await navigator.clipboard.readText();
 			if (text && text.trim()) {
 				textArea.setValue(text);

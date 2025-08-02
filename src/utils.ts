@@ -1,5 +1,6 @@
 import { BibtexParser } from "bibtex-js-parser";
 import { Notice } from "obsidian";
+import { decodeString } from "unicode-tex-character-converter";
 
 export function extractTitle(fullTitle: string): string {
 	// Remove citekey prefix like "Ara18 " from "Ara18 Dynamic Decoupling of Robot Manipulators"
@@ -112,7 +113,7 @@ export function parseBibTeXEntry(
 			} else if (key === "type") {
 				result["_bibtype"] = entry.type.toLowerCase();
 			} else {
-				result[key.toLowerCase()] = String(value);
+				result[key.toLowerCase()] = String(decodeString(value));
 			}
 		}
 
@@ -122,3 +123,27 @@ export function parseBibTeXEntry(
 		return null;
 	}
 }
+
+/*
+
+ if (key === "author") {
+				// Normalize author field to "author" for consistency
+				result["author"] = String(decodeString(value))
+					.split(" and ")
+					.map((name) => {
+						if (!name.includes(",")) return name.trim();
+						let nameSplit = name.split(",");
+						nameSplit = nameSplit.map((part) => part.trim());
+						if (nameSplit.length === 2) {
+							// Format "Last, First" to "First Last"
+							return `${nameSplit[1]} ${nameSplit[0]}`;
+						} else if (nameSplit.length === 3) {
+							// Handle cases like "Last, First Middle"
+							return `${nameSplit[1]} ${nameSplit[0]} ${nameSplit[0]}`;
+						}
+						return name.trim();
+					});
+			} 
+
+
+			*/

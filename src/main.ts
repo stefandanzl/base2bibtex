@@ -8,6 +8,7 @@ import {
 	extractAuthor,
 	getRequiredFields,
 } from "utils";
+import { decodeString } from "unicode-tex-character-converter";
 
 export default class ClipboardToBibTeXPlugin extends Plugin {
 	settings: ClipboardToBibTeXSettings;
@@ -286,20 +287,6 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			...typeMapping,
 		};
 
-		// let noteContent = "---\n";
-
-		// for (const [bibtexField, sourceColumn] of Object.entries(allFields)) {
-		// 	if (bibtexField.startsWith("_")) continue;
-
-		// 	const value = entry[bibtexField.toLowerCase()];
-
-		// 	if (value) {
-		// 		noteContent += `${sourceColumn}: ${value}\n`;
-		// 	}
-		// }
-
-		// noteContent += "---\n";
-
 		const filePath = normalizePath(`${location}/${filename}.md`);
 
 		try {
@@ -308,8 +295,31 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 				for (const [key, value] of Object.entries(allFields)) {
 					// if (key.startsWith("_")) continue; // Skip structural fields
 					const bibtexField = key.toLowerCase();
-					if (entry[bibtexField]) {
-						frontMatter[value] = entry[bibtexField];
+
+					if (key === "author") {
+						frontMatter[value] = String(
+							decodeString(entry[bibtexField])
+						)
+							.split(" and ")
+							.map((name) => {
+								if (!name.includes(",")) return name.trim();
+								let nameSplit = name.split(",");
+								nameSplit = nameSplit.map((part) =>
+									part.trim()
+								);
+								if (nameSplit.length === 2) {
+									// Format "Last, First" to "First Last"
+									return `${nameSplit[1]} ${nameSplit[0]}`;
+								} else if (nameSplit.length === 3) {
+									// Handle cases like "Last, First Middle"
+									return `${nameSplit[1]} ${nameSplit[0]} ${nameSplit[0]}`;
+								}
+								return name.trim();
+							});
+					} else {
+						if (entry[bibtexField]) {
+							frontMatter[value] = entry[bibtexField];
+						}
 					}
 				}
 			});

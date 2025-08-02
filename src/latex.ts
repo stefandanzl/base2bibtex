@@ -1,5 +1,5 @@
 // Comprehensive LaTeX-to-Unicode mapping for BibTeX
-const LATEX_TO_UNICODE_MAP: Record<string, string> = {
+export const LATEX_TO_UNICODE_MAP: Record<string, string> = {
 	// Acute accents (´) - Multiple syntax variations
 	"{\\'a}": "á",
 	"{\\'A}": "Á",
@@ -265,7 +265,7 @@ const LATEX_TO_UNICODE_MAP: Record<string, string> = {
  * @param text - Text with LaTeX commands
  * @returns Unicode text
  */
-function convertLatexToUnicode(text: string): string {
+export function convertLatexToUnicode(text: string): string {
 	if (!text) return text;
 
 	let result: string = text;
@@ -288,6 +288,39 @@ function convertLatexToUnicode(text: string): string {
 }
 
 /**
+ * Convert Unicode text to LaTeX-encoded text
+ * @param text - Text with Unicode characters
+ * @returns LaTeX-encoded text
+ */
+export function convertUnicodeToLatex(text: string): string {
+	if (!text) return text;
+
+	// Create reverse mapping from the existing LATEX_TO_UNICODE_MAP
+	const UNICODE_TO_LATEX_MAP: Record<string, string> = {};
+
+	for (const [latex, unicode] of Object.entries(LATEX_TO_UNICODE_MAP)) {
+		// Only use the first LaTeX form for each Unicode character
+		// This avoids conflicts when multiple LaTeX forms map to the same Unicode
+		if (!UNICODE_TO_LATEX_MAP[unicode]) {
+			UNICODE_TO_LATEX_MAP[unicode] = latex;
+		}
+	}
+
+	let result: string = text;
+
+	// Apply all mappings (longer strings first to avoid partial replacements)
+	const sortedEntries = Object.entries(UNICODE_TO_LATEX_MAP).sort(
+		([a], [b]) => b.length - a.length
+	);
+
+	for (const [unicode, latex] of sortedEntries) {
+		result = result.replace(new RegExp(unicode, "g"), latex);
+	}
+
+	return result;
+}
+
+/**
  * Parse BibTeX authors into clean array
  * @param authorString - Raw author field from BibTeX
  * @returns Array of cleaned author names
@@ -303,16 +336,6 @@ function parseAuthors(authorString: string): string[] {
 		.split(/\s+and\s+/i)
 		.map((author: string) => author.trim())
 		.filter((author: string) => author.length > 0);
-}
-
-/**
- * Clean a BibTeX title
- * @param title - Raw title from BibTeX
- * @returns Clean Unicode title
- */
-function cleanTitle(title: string): string {
-	if (!title) return title;
-	return convertLatexToUnicode(title);
 }
 
 // Test with your examples and multiple syntax variations
@@ -338,5 +361,3 @@ console.log("\\nTesting different syntax for é:");
 console.log(convertLatexToUnicode("{\\'e}")); // → é (braces around command)
 console.log(convertLatexToUnicode("\\'{e}")); // → é (braces around letter)
 console.log(convertLatexToUnicode("\\'e")); // → é (minimal)
-
-export { convertLatexToUnicode, parseAuthors, cleanTitle };

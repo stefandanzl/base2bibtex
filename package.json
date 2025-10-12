@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "base2bibtex",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Converts Obsidian Bases of literature sources to BibTeX files.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
@@ -20,5 +20,13 @@
 		"obsidian": "latest",
 		"tslib": "2.4.0",
 		"typescript": "4.7.4"
+	},
+	"dependencies": {
+		"@orcid/bibtex-parse-js": "^0.0.25",
+		"@unified-latex/unified-latex-util-parse": "^1.8.3",
+		"@unified-latex/unified-latex-util-to-string": "^1.8.3",
+		"bibtex-js-parser": "^1.1.6",
+		"latex-to-unicode": "^0.1.0",
+		"unicode-tex-character-converter": "^1.14.4"
 	}
 }

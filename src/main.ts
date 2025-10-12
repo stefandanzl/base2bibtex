@@ -1,3 +1,4 @@
+<<<<<<< HEAD:main.ts
 import {
 	App,
 	Plugin,
@@ -120,6 +121,19 @@ const DEFAULT_SETTINGS: ClipboardToBibTeXSettings = {
 interface TableRow {
 	[key: string]: string;
 }
+=======
+import { Plugin, Notice, TFile, normalizePath } from "obsidian";
+import { TableToBibTeXModal, BibTeXToNoteModal } from "modals";
+import { ClipboardToBibTeXSettings, DEFAULT_SETTINGS, TableRow } from "./const";
+import {
+	normalizeBibType,
+	extractTitle,
+	escapeLatex,
+	extractAuthor,
+	getRequiredFields,
+} from "utils";
+import { decodeString } from "unicode-tex-character-converter";
+>>>>>>> ac300e0d4581653c4b720a874845abc9cfb44278:src/main.ts
 
 export default class ClipboardToBibTeXPlugin extends Plugin {
 	settings: ClipboardToBibTeXSettings;
@@ -147,6 +161,14 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			name: "Convert Table to BibTeX",
 			callback: () => {
 				new TableToBibTeXModal(this.app, this).open();
+			},
+		});
+
+		this.addCommand({
+			id: "bibtex-to-note",
+			name: "Create Note from BibTeX",
+			callback: () => {
+				new BibTeXToNoteModal(this.app, this).open();
 			},
 		});
 	}
@@ -200,7 +222,7 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			.map((line, index) => {
 				if (
 					!line.trim() ||
-					(separator === "|" && line.match(/^[\|\-\s]+$/))
+					(separator === "|" && line.match(/^[|\-\s]+$/))
 				) {
 					return null; // Skip separator lines
 				}
@@ -231,7 +253,7 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		const rows: TableRow[] = [];
 		for (let i = 1; i < lines.length; i++) {
 			const line = lines[i].trim();
-			if (!line || (separator === "|" && line.match(/^[\|\-\s]+$/))) {
+			if (!line || (separator === "|" && line.match(/^[|\-\s]+$/))) {
 				console.log(
 					`parseTableData - Skipping empty/separator line ${i}`
 				);
@@ -288,10 +310,10 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 				entries.push(entry);
 
 				// Check for missing required fields
-				const bibtype = this.normalizeBibType(
+				const bibtype = normalizeBibType(
 					row[this.settings.fieldMappings.all["_BIBTYPE"]] || "misc"
 				);
-				const requiredFields = this.getRequiredFields(bibtype);
+				const requiredFields = getRequiredFields(bibtype);
 				const missingForEntry = requiredFields.filter((field) => {
 					const sourceColumn =
 						this.settings.fieldMappings.all[field] ||
@@ -328,34 +350,6 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		return entries;
 	}
 
-	getRequiredFields(bibtype: string): string[] {
-		switch (bibtype.toLowerCase()) {
-			case "article":
-				return ["author", "journal"];
-			case "book":
-				return ["author", "publisher"];
-			case "inproceedings":
-				return ["author", "booktitle"];
-			case "incollection":
-				return ["author", "booktitle"];
-			case "inbook":
-				return ["author", "publisher"];
-			case "proceedings":
-				return ["publisher"];
-			case "manual":
-				return ["organization"];
-			case "techreport":
-				return ["author", "institution"];
-			case "mastersthesis":
-			case "phdthesis":
-				return ["author", "school"];
-			case "unpublished":
-				return ["author", "note"];
-			default:
-				return ["author"];
-		}
-	}
-
 	createBibTeXEntry(row: TableRow): string | null {
 		const mappings = this.settings.fieldMappings;
 
@@ -365,8 +359,8 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		const titleCol = mappings.all["title"] || "name"; // fallback to "name" for your data
 
 		const citekey = row[citekeyCol];
-		const bibtype = this.normalizeBibType(row[bibtypeCol] || "misc");
-		const title = this.extractTitle(row[titleCol] || "");
+		const bibtype = normalizeBibType(row[bibtypeCol] || "misc");
+		const title = extractTitle(row[titleCol] || "");
 
 		// Only require citekey and title - other fields are optional
 		if (!citekey || !title) {
@@ -389,20 +383,22 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			// Skip missing/empty fields silently
 			if (!value || !value.trim()) continue;
 
+			const escapedValue = escapeLatex(value.trim());
+
 			// Special handling for certain fields
 			if (bibtexField === "pages" && value.includes("-")) {
 				const pages = value.replace(/-/g, "--");
 				entry += `  ${bibtexField} = {${pages}},\n`;
 			} else if (bibtexField === "title") {
-				const cleanTitle = this.extractTitle(value);
-				entry += `  ${bibtexField} = {${cleanTitle}},\n`;
+				const cleanTitle = extractTitle(value);
+				entry += `  ${bibtexField} = {${escapeLatex(cleanTitle)}},\n`;
 			} else if (bibtexField === "author") {
-				const author = this.extractAuthor(value, row.author);
+				const author = extractAuthor(value, row.author);
 				if (author) {
-					entry += `  ${bibtexField} = {${author}},\n`;
+					entry += `  ${bibtexField} = {${escapeLatex(author)}},\n`;
 				}
 			} else {
-				entry += `  ${bibtexField} = {${value.trim()}},\n`;
+				entry += `  ${bibtexField} = {${escapedValue}},\n`;
 			}
 		}
 
@@ -413,42 +409,58 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		return entry;
 	}
 
-	extractTitle(fullTitle: string): string {
-		// Remove citekey prefix like "Ara18 " from "Ara18 Dynamic Decoupling of Robot Manipulators"
-		const match = fullTitle.match(/^[A-Z]+\d+[-\w]*\s+(.+)$/);
-		return match ? match[1] : fullTitle;
-	}
+	async createNoteFromBibTeX(
+		entry: { [key: string]: string },
+		location: string,
+		filename: string
+	) {
+		const bibtype = entry["_bibtype"];
+		const typeMapping = this.settings.fieldMappings[bibtype] || {};
+		const allFields = {
+			...this.settings.fieldMappings.all,
+			...typeMapping,
+		};
 
-	extractAuthor(fullTitle: string, authorField?: string): string {
-		if (authorField && authorField.trim()) {
-			return authorField.trim();
-		}
+		const filePath = normalizePath(`${location}/${filename}.md`);
 
-		// Try to extract author from citekey (e.g., "Ara18" -> "Araujo")
-		// This is a basic heuristic - you might want to improve this
-		const citekeyMatch = fullTitle.match(/^([A-Z]+)\d+/);
-		if (citekeyMatch) {
-			const authorCode = citekeyMatch[1];
-			// This is a placeholder - in practice you'd need a mapping or better logic
-			return `${authorCode} et al.`;
-		}
+		try {
+			const file = await this.app.vault.create(filePath, "");
+			this.app.fileManager.processFrontMatter(file, (frontMatter) => {
+				for (const [key, value] of Object.entries(allFields)) {
+					// if (key.startsWith("_")) continue; // Skip structural fields
+					const bibtexField = key.toLowerCase();
 
-		return "";
-	}
-
-	normalizeBibType(type: string): string {
-		const normalized = type.toLowerCase();
-		switch (normalized) {
-			case "paper":
-			case "article":
-				return "article";
-			case "book":
-				return "book";
-			case "conference":
-			case "inproceedings":
-				return "inproceedings";
-			default:
-				return "misc";
+					if (key === "author") {
+						frontMatter[value] = String(
+							decodeString(entry[bibtexField])
+						)
+							.split(" and ")
+							.map((name) => {
+								if (!name.includes(",")) return name.trim();
+								let nameSplit = name.split(",");
+								nameSplit = nameSplit.map((part) =>
+									part.trim()
+								);
+								if (nameSplit.length === 2) {
+									// Format "Last, First" to "First Last"
+									return `${nameSplit[1]} ${nameSplit[0]}`;
+								} else if (nameSplit.length === 3) {
+									// Handle cases like "Last, First Middle"
+									return `${nameSplit[1]} ${nameSplit[0]} ${nameSplit[0]}`;
+								}
+								return name.trim();
+							});
+					} else {
+						if (entry[bibtexField]) {
+							frontMatter[value] = entry[bibtexField];
+						}
+					}
+				}
+			});
+			new Notice(`Successfully created note: ${filePath}`);
+		} catch (error) {
+			console.error("Error creating note:", error);
+			new Notice("Error creating note: " + error.message);
 		}
 	}
 
@@ -497,6 +509,7 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		}
 	}
 }
+<<<<<<< HEAD:main.ts
 
 function baseToBibTeX(app: App, plugin: ClipboardToBibTeXPlugin) {
 	const file = app.workspace.getActiveFile();
@@ -628,3 +641,5 @@ class TableToBibTeXModal extends Modal {
 		}
 	}
 }
+=======
+>>>>>>> ac300e0d4581653c4b720a874845abc9cfb44278:src/main.ts

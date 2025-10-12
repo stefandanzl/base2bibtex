@@ -1,4 +1,12 @@
-import { App, Plugin, Modal, Setting, Notice, TFile } from "obsidian";
+import {
+	App,
+	Plugin,
+	Modal,
+	Setting,
+	Notice,
+	TFile,
+	BasesView,
+} from "obsidian";
 
 interface FieldMappings {
 	all: { [bibtexField: string]: string };
@@ -123,6 +131,15 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 		/** this.addRibbonIcon("clipboard", "Convert Table to BibTeX", () => {
 			new TableToBibTeXModal(this.app, this).open();
 		});*/
+
+		// Add command
+		this.addCommand({
+			id: "base-to-bibtex",
+			name: "Convert Base to BibTeX",
+			callback: () => {
+				baseToBibTeX(this.app, this);
+			},
+		});
 
 		// Add command
 		this.addCommand({
@@ -478,6 +495,28 @@ export default class ClipboardToBibTeXPlugin extends Plugin {
 			new Notice("Error converting table: " + error.message);
 			return false;
 		}
+	}
+}
+
+function baseToBibTeX(app: App, plugin: ClipboardToBibTeXPlugin) {
+	const file = app.workspace.getActiveFile();
+	console.log(file);
+	if (file) {
+		console.log("Current file path:", file.path);
+		console.log("Current file name:", file.name);
+
+		console.log();
+
+		// const leaf = app.workspace.activeLeaf;
+		const leaf = app.workspace.getActiveViewOfType(BasesView);
+		// if (leaf && leaf.view instanceof BasesView) {
+		if (leaf) {
+			const basesView = leaf;
+			console.log("Bases view config:", basesView.config);
+			console.log("Bases data:", basesView.data);
+		}
+	} else {
+		console.log("No file currently open.");
 	}
 }
 

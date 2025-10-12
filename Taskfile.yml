@@ -3,18 +3,70 @@
 version: "3"
 
 vars:
-    VAULT: C:\\PROJECTS\\Obsidian\\hirn\\.obsidian\\plugins\\base2bibtex
+    PLUGIN: base2bibtex
+    DIR_PLUGIN: "{{.VAULTS_DIR}}/{{.VAULT_NAME}}/.obsidian/plugins/{{.PLUGIN}}"
+    VERSION:
+        sh: node -e "console.log(require('./package.json').version)"
+    FILES: "main.js manifest.json"
+
+# Rename .env-example to .env and modify for your setup
+dotenv: [".env"]
 
 tasks:
     default:
         cmds:
-            - npm run build
-            - cp main.js "{{.VAULT}}\main.js"
-            # - cp styles.css "{{.VAULT}}\styles.css"
-            - cp manifest.json "{{.VAULT}}\manifest.json"
-    serena:
+            - task: build
+            - task: copy
+    copy:
+        cmds:
+            - cp main.js '{{.DIR_PLUGIN}}/main.js'
+            - cp manifest.json '{{.DIR_PLUGIN}}/manifest.json'
+
+    build:
         cmds:
             - npm run build
-            - copy main.js "{{.VAULT}}\main.js"
-            - copy styles.css "{{.VAULT}}\styles.css"
-            - copy manifest.json "{{.VAULT}}\manifest.json"
+    patch:
+        cmds:
+            - npm version patch
+    git:
+        cmds:
+            - git add .
+            - git commit -m "task"
+            - git push
+
+    minify:
+        cmds:
+            - terser main.js -o main.min.js
+    time:
+        cmds:
+            - date +%T
+
+    dev: npm run dev
+
+    bump:
+        desc: "Commit Changes and bump minor version"
+        cmds:
+            - git add .
+            - cmd: git commit -m "bump"
+              ignore_error: true
+            - npm version minor
+            - npm run version
+
+    release:
+        desc: "Commit Changes, create version tag, push to Github and create a new release on GitHub"
+        cmds:
+            - git add .
+            - cmd: git commit -m "{{.VERSION}} Commit"
+              ignore_error: true
+            # - git tag {{.VERSION}}
+            - git push
+            - git push --tags
+            - task: release-create
+
+    release-create:
+        cmds:
+            - gh release create {{.VERSION}} --title "{{.VERSION}}" --notes "New release of the {{.PLUGIN}} plugin for Obsidian." {{.FILES}}
+
+    test:
+        cmds:
+            - echo {{.VERSION}}
